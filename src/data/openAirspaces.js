@@ -760,6 +760,10 @@ export function createOpenAirspacesLayer({
     updateInterval: 0,
     statsRefreshInterval: STATS_REFRESH_INTERVAL_MS,
     refreshInterval: REFRESH_INTERVAL_MS,
+    // The type-chip grid + legend render into the right-rail companion panel
+    // (index.html #airspace-controls) instead of the data row, keeping the row
+    // compact. ui.js owns the panel's source badge / meta line.
+    controlsPanelId: 'airspace-controls',
 
     init(viewer) {
       if (_destroyed) return;

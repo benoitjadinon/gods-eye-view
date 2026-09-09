@@ -1417,6 +1417,7 @@ body.ui-clean-view #location-bar,
 body.ui-clean-view #data-panel,
 body.ui-clean-view #cctv-panel,
 body.ui-clean-view #radio-panel,
+body.ui-clean-view #airspace-panel,
 body.ui-clean-view #global-context-panel,
 body.ui-clean-view #scene-panel {
   opacity: 0 !important;
@@ -4544,6 +4545,31 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
   overflow-y: auto;
   scrollbar-gutter: stable;
 }
+#right-context-rail > #airspace-panel {
+  position: relative;
+  inset: auto;
+  flex: 0 0 auto;
+  pointer-events: auto;
+}
+#right-context-rail #airspace-panel {
+  width: 100%;
+  max-height: 100%;
+  pointer-events: auto;
+}
+#right-context-rail #airspace-panel.collapsed {
+  width: var(--right-display-collapsed-width);
+  margin-left: auto;
+}
+#right-context-rail #airspace-panel.collapsed .airspace-panel-inner {
+  height: 50px;
+  min-height: 50px;
+  box-sizing: border-box;
+}
+#right-context-rail #airspace-panel:not(.collapsed) .airspace-panel-inner {
+  max-height: 100%;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
 #right-context-rail .global-context-panel-inner { max-height: 100%; }
 #right-context-rail #global-context-panel:not(.collapsed) .global-context-panel-inner {
   max-height: 100%;
@@ -4581,6 +4607,7 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 }
 #right-context-rail.layout-focus > #pp-toggles:not(.collapsed),
 #right-context-rail.layout-focus > #cctv-panel:not(.collapsed),
+#right-context-rail.layout-focus > #airspace-panel:not(.collapsed),
 #right-context-rail.layout-focus > #global-context-panel:not(.collapsed) {
   flex: 0 1 var(--right-panel-allocated-height);
   height: var(--right-panel-allocated-height);
@@ -4594,6 +4621,7 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
   scrollbar-color: rgba(0, 212, 255, 0.4) transparent;
 }
 #right-context-rail.layout-focus > #cctv-panel:not(.collapsed) .cctv-panel-inner,
+#right-context-rail.layout-focus > #airspace-panel:not(.collapsed) .airspace-panel-inner,
 #right-context-rail.layout-focus > #global-context-panel:not(.collapsed) .global-context-panel-inner {
   height: 100%;
   box-sizing: border-box;
@@ -6047,6 +6075,98 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
   border-radius: 999px;
 }
 
+#airspace-panel {
+  --panel-expanded-width: 360px;
+  position: fixed;
+  top: var(--left-stack-top);
+  left: var(--left-stack-x);
+  right: auto;
+  bottom: auto;
+  z-index: 100;
+  width: var(--panel-expanded-width);
+  max-height: calc(100vh - 24px);
+}
+
+#airspace-panel .panel-glow {
+  position: absolute;
+  inset: -18px;
+  background: radial-gradient(ellipse at center, rgba(0, 212, 255, 0.16) 0%, transparent 65%);
+  filter: blur(16px);
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+.airspace-panel-inner {
+  position: relative;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--panel-radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 24px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 212, 255, 0.46) rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(24px) saturate(1.4);
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 0 0 1px rgba(255, 255, 255, 0.03) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06) inset;
+}
+
+.airspace-panel-inner::-webkit-scrollbar {
+  width: 8px;
+}
+
+.airspace-panel-inner::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 999px;
+}
+
+.airspace-panel-inner::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, rgba(0, 212, 255, 0.6), rgba(0, 212, 255, 0.28));
+  border: 1px solid rgba(0, 212, 255, 0.4);
+  border-radius: 999px;
+}
+
+#airspace-layer-state {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 1.4px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+#airspace-layer-state[data-active] {
+  color: var(--accent);
+  text-shadow: 0 0 8px rgba(0, 212, 255, 0.3);
+}
+
+#airspace-source-badge {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 1px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+}
+
+#airspace-meta {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.5px;
+  color: var(--text-dim);
+}
+
+/* The chip grid renders into #airspace-controls with the shared
+   data-toggle-chip classes; the row's 26px indentation is a row concern. */
+#airspace-panel .airspace-controls {
+  padding-left: 0;
+  margin-top: 0;
+}
+
 .cctv-controls {
   display: flex;
   gap: 8px;
@@ -6680,6 +6800,9 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #cctv-panel.collapsed #cctv-meta,
 #cctv-panel.collapsed .cctv-summary-label,
 #cctv-panel.collapsed #cctv-summary,
+#airspace-panel.collapsed #airspace-source-badge,
+#airspace-panel.collapsed #airspace-meta,
+#airspace-panel.collapsed #airspace-controls,
 #scene-panel.collapsed .scene-controls,
 #scene-panel.collapsed .scene-shot-list,
 #scene-panel.collapsed .scene-progress,
@@ -6701,6 +6824,7 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 
 #data-panel.collapsed .panel-title,
 #cctv-panel.collapsed .panel-title,
+#airspace-panel.collapsed .panel-title,
 #radio-panel.collapsed .panel-title,
 #scene-panel.collapsed .panel-title {
   font-size: 8px;
@@ -6710,6 +6834,7 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #control-panel.collapsed .panel-inner,
 #data-panel.collapsed .data-panel-inner,
 #cctv-panel.collapsed .cctv-panel-inner,
+#airspace-panel.collapsed .airspace-panel-inner,
 #radio-panel.collapsed .radio-panel-inner,
 #scene-panel.collapsed .scene-panel-inner,
 #param-slider-panel.collapsed,
@@ -6720,6 +6845,7 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #control-panel.collapsed .panel-header,
 #data-panel.collapsed .panel-header,
 #cctv-panel.collapsed .panel-header,
+#airspace-panel.collapsed .panel-header,
 #radio-panel.collapsed .panel-header,
 #global-context-panel.collapsed .panel-header,
 #scene-panel.collapsed .panel-header,
@@ -6741,6 +6867,7 @@ body.recording-mode #control-panel,
 body.recording-mode #location-bar,
 body.recording-mode #data-panel,
 body.recording-mode #cctv-panel,
+body.recording-mode #airspace-panel,
 body.recording-mode #radio-panel,
 body.recording-mode #global-context-panel,
 body.recording-mode #gev-voice-control,
@@ -6935,13 +7062,15 @@ body.scene-playback-mode :is(#clear-selected-layers, #reset-globe-view) {
     overflow-y: auto;
   }
 
-  #right-context-rail > #pp-toggles {
+#right-context-rail > #pp-toggles {
     width: 100%;
   }
 
   #right-context-rail #pp-toggles.collapsed .pp-header-row,
   #right-context-rail #cctv-panel,
   #right-context-rail #cctv-panel.collapsed,
+  #right-context-rail #airspace-panel,
+  #right-context-rail #airspace-panel.collapsed,
   #right-context-rail #radio-panel,
   #right-context-rail #radio-panel.collapsed,
   #right-context-rail #global-context-panel,

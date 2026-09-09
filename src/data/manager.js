@@ -2077,19 +2077,43 @@ export class DataLayerManager {
         // that can also fail) pushes a re-render through this; nothing else
         // would repaint the row before its next scheduled refresh.
         rowModule.setRowControlsListener?.(() => this._refreshTogglePanel());
-        const controls = document.createElement('div');
-        controls.className = 'data-toggle-controls';
-        controls.addEventListener('click', (event) => {
-          const button = event.target?.closest?.('.data-toggle-chip');
-          if (!button || button.disabled) return;
-          // Re-read the live descriptor rather than trusting the rendered
-          // chip, so a stale row can never apply an inverted toggle.
-          const chip = this._rowControlsFor(layer.id)?.chips
-            ?.find((entry) => entry.id === button.dataset.chipId);
-          if (chip?.params) this.setLayerParams(layer.id, chip.params, { origin: 'user' });
-        });
-        row.appendChild(controls);
-        this._syncRowControls(controls, layer);
+        // A layer may host its chip grid + legend in a dedicated panel (e.g.
+        // the VFR Airspaces right-rail companion) instead of its data row.
+        // The container is a stable HTML node, so the delegated chip listener
+        // is wired exactly once and chips reconcile in place on every refresh
+        // — identical semantics to the inline row, just a different home.
+        const panelTarget = typeof rowModule.controlsPanelId === 'string'
+          ? document.getElementById(rowModule.controlsPanelId)
+          : null;
+        if (panelTarget) {
+          if (!panelTarget.dataset.panelControlsWired) {
+            panelTarget.dataset.panelControlsWired = '1';
+            panelTarget.addEventListener('click', (event) => {
+              const button = event.target?.closest?.('.data-toggle-chip');
+              if (!button || button.disabled) return;
+              // Re-read the live descriptor rather than trusting the rendered
+              // chip, so a stale row can never apply an inverted toggle.
+              const chip = this._rowControlsFor(layer.id)?.chips
+                ?.find((entry) => entry.id === button.dataset.chipId);
+              if (chip?.params) this.setLayerParams(layer.id, chip.params, { origin: 'user' });
+            });
+          }
+          this._syncRowControls(panelTarget, layer);
+        } else {
+          const controls = document.createElement('div');
+          controls.className = 'data-toggle-controls';
+          controls.addEventListener('click', (event) => {
+            const button = event.target?.closest?.('.data-toggle-chip');
+            if (!button || button.disabled) return;
+            // Re-read the live descriptor rather than trusting the rendered
+            // chip, so a stale row can never apply an inverted toggle.
+            const chip = this._rowControlsFor(layer.id)?.chips
+              ?.find((entry) => entry.id === button.dataset.chipId);
+            if (chip?.params) this.setLayerParams(layer.id, chip.params, { origin: 'user' });
+          });
+          row.appendChild(controls);
+          this._syncRowControls(controls, layer);
+        }
       }
 
       this._toggleContainer.appendChild(row);
@@ -2203,7 +2227,14 @@ export class DataLayerManager {
         meta.textContent = this._buildMetaText(layer);
       }
 
-      this._syncRowControls(row.querySelector('.data-toggle-controls'), layer);
+      // Panel-hosted controls (controlsPanelId) live outside the row — mirror
+      // _renderToggles' routing so an in-place refresh keeps the panel's chip
+      // grid and legend reconciled (a plain row query would miss them).
+      const rowModule = this.layers.get(layer.id)?.module;
+      const controlsTarget = typeof rowModule?.controlsPanelId === 'string'
+        ? document.getElementById(rowModule.controlsPanelId)
+        : row.querySelector('.data-toggle-controls');
+      this._syncRowControls(controlsTarget, layer);
     }
   }
 

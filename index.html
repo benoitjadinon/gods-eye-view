@@ -825,6 +825,26 @@
         </section>
       </div>
     </div>
+
+    <!-- VFR Airspaces Panel (OpenAIP) — right-rail companion for the
+         open-airspaces layer. The type-chip grid + legend render into
+         #airspace-controls by the DataLayerManager (the layer declares
+         controlsPanelId); ui.js keeps the source badge / meta line and
+         auto-expands the panel when the layer activates. -->
+    <div id="airspace-panel" class="panel-collapsible collapsed" data-panel-id="airspace-panel">
+      <div class="panel-glow"></div>
+      <div class="airspace-panel-inner">
+        <div class="panel-header">
+          <span class="panel-title">VFR AIRSPACES</span>
+          <span id="airspace-layer-state" class="airspace-layer-state">OFF</span>
+          <span class="panel-divider"></span>
+          <button class="panel-collapse-btn" data-collapse-target="airspace-panel" title="Expand VFR Airspaces" aria-label="Expand VFR Airspaces">◀</button>
+        </div>
+        <div id="airspace-source-badge" role="status" aria-live="polite">SOURCE · OFF</div>
+        <div id="airspace-meta">Enable VFR Airspaces to load OpenAIP airspace zones</div>
+        <div id="airspace-controls" class="data-toggle-controls airspace-controls"></div>
+      </div>
+    </div>
   </aside>
 
   <div id="scene-runtime"></div>

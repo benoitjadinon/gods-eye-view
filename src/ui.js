@@ -209,6 +209,7 @@ const SHARE_PANEL_STATE_SPECS = Object.freeze([
   { id: 'radio-panel' },
   { id: 'scene-panel' },
   { id: 'global-context-panel' },
+  { id: 'airspace-panel' },
   { id: 'pp-toggles' },
   { id: 'param-slider-panel' },
 ]);
@@ -220,6 +221,7 @@ const COCKPIT_ENTRY_COLLAPSE_PANEL_IDS = Object.freeze([
   'pp-toggles',
   'global-context-panel',
   'radio-panel',
+  'airspace-panel',
 ]);
 /**
  * Position keys are versioned separately from collapsed-state keys so layout
@@ -2260,6 +2262,7 @@ export class StyleManager {
     this._dataPanel = document.getElementById('data-panel');
     this._scenePanel = document.getElementById('scene-panel');
     this._cctvPanel = document.getElementById('cctv-panel');
+    this._airspacePanel = document.getElementById('airspace-panel');
     this._radioPanel = document.getElementById('radio-panel');
     this._contextRadioDock = document.getElementById('context-radio-dock');
     this._contextRadioToggleBtn = document.getElementById('context-radio-toggle-btn');
@@ -4363,10 +4366,14 @@ export class StyleManager {
         if (String(change?.type || '').startsWith('visibility')) {
           this._handleContextLayerChange(change);
         }
+        if (change?.layerId === 'open-airspaces') {
+          this._syncAirspacePanelMeta(change);
+        }
         this._loadingFeedbackEvent = change;
         this._updateGlobalLoadingFeedback(performance.now());
       });
     }
+    this._syncAirspacePanelMeta();
     this._updateGlobalLoadingFeedback(performance.now());
     if (typeof this._dataManager?.subscribeVisibilityRequests === 'function') {
       this._dataManagerVisibilityRequestUnsubscribe = this._dataManager.subscribeVisibilityRequests((change) => {
@@ -6655,6 +6662,58 @@ export class StyleManager {
   }
 
   /**
+   * Keep the VFR Airspaces right-rail panel's source badge, layer-state chip,
+   * and meta line honest against the layer's live stats. Also auto-expands the
+   * panel when the layer activates — mirroring the CCTV panel's activation
+   * reveal: an explicit enable owns the reveal, while a restore or programmatic
+   * change preserves the saved collapsed state.
+   * @param {{type?:string, layerId?:string, enabled?:boolean}} [change]
+   * @returns {void}
+   */
+  _syncAirspacePanelMeta(change) {
+    if (!this._airspacePanel) return;
+    if (change?.type === 'visibility' && change.enabled) {
+      this.setPanelCollapsed('airspace-panel', false, { explicit: true });
+    }
+    const module = this._dataManager?.layers?.get?.('open-airspaces')?.module;
+    const enabled = this._dataManager?.isEnabled?.('open-airspaces') === true;
+    const stats = (module && typeof module.getStats === 'function') ? module.getStats() : {};
+    const count = Number(stats?.count) || 0;
+    const loading = stats?.loading === true;
+    const error = String(stats?.error || '').trim();
+    const layerState = document.getElementById('airspace-layer-state');
+    const badge = document.getElementById('airspace-source-badge');
+    const meta = document.getElementById('airspace-meta');
+    if (layerState) {
+      layerState.textContent = enabled ? 'ON' : 'OFF';
+      if (enabled) layerState.dataset.active = '1';
+      else delete layerState.dataset.active;
+    }
+    if (badge) {
+      if (!enabled) badge.textContent = 'SOURCE · OFF';
+      else if (error) badge.textContent = `SOURCE · ${error}`;
+      else if (loading) badge.textContent = 'SOURCE · LOADING';
+      else if (count > 0) badge.textContent = `SOURCE · ${count} ZONES`;
+      else badge.textContent = 'SOURCE · OpenAIP';
+    }
+    if (meta) {
+      if (!enabled) {
+        meta.textContent = 'Enable VFR Airspaces to load OpenAIP airspace zones';
+      } else if (error === 'KEY REQUIRED') {
+        meta.textContent = 'OpenAIP key required — add one in POWER UP';
+      } else if (error) {
+        meta.textContent = `OpenAIP feed unavailable (${error})`;
+      } else if (loading) {
+        meta.textContent = 'Loading airspace zones from OpenAIP…';
+      } else if (count > 0) {
+        meta.textContent = `${count} zones in view · chips filter types · VOLUMES toggles 3D`;
+      } else {
+        meta.textContent = 'No OpenAIP airspace zones in view — zoom to an airport or VFR region';
+      }
+    }
+  }
+
+  /**
    * Typewriter-animates CCTV summary text into the summary element.
    * Skips animation if the text hasn't changed since the last call.
    * Advances 3 characters per 20ms tick for a fast teletype effect.
@@ -6777,6 +6836,16 @@ export class StyleManager {
       stack.insertBefore(this._cctvPanel, globalContextPanel);
       this._syncPanelCollapseButton(this._cctvPanel);
     }
+    if (this._airspacePanel) {
+      this._airspacePanel.style.removeProperty('top');
+      this._airspacePanel.style.removeProperty('right');
+      this._airspacePanel.style.removeProperty('bottom');
+      this._airspacePanel.style.removeProperty('left');
+      this._airspacePanel.style.removeProperty('z-index');
+      this._airspacePanel.classList.remove('panel-draggable', 'panel-dragging');
+      stack.insertBefore(this._airspacePanel, globalContextPanel);
+      this._syncPanelCollapseButton(this._airspacePanel);
+    }
     if (this._sliderPanel) {
       this._sliderPanel.style.removeProperty('top');
       this._sliderPanel.style.removeProperty('right');
@@ -6792,7 +6861,7 @@ export class StyleManager {
         this._scheduleRightPanelLayout();
       });
       this._rightStackResizeObserver.observe(stack);
-      for (const panel of [this._ppToggles, this._cctvPanel, globalContextPanel]) {
+      for (const panel of [this._ppToggles, this._cctvPanel, this._airspacePanel, globalContextPanel]) {
         if (panel) this._rightStackResizeObserver.observe(panel);
       }
       document.querySelectorAll(RIGHT_STACK_OBSTACLE_SELECTOR).forEach((element) => {
@@ -7410,7 +7479,7 @@ export class StyleManager {
    * @returns {void}
    */
   _syncPanelCollapseButton(panelEl) {
-    const isRightRail = ['pp-toggles', 'cctv-panel', 'global-context-panel'].includes(panelEl?.id);
+    const isRightRail = ['pp-toggles', 'cctv-panel', 'airspace-panel', 'global-context-panel'].includes(panelEl?.id);
     const collapsed = panelEl.classList.contains('collapsed');
     panelEl.querySelectorAll('.panel-collapse-btn[data-collapse-target]').forEach((btn) => {
       const owner = btn.closest('[data-panel-id], #param-slider-panel');
