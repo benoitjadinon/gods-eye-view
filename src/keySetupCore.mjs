@@ -62,6 +62,14 @@ export const KEY_SETUP_KEYS = Object.freeze([
     tier: 'free',
   }),
   Object.freeze({
+    id: 'openAip',
+    title: 'OpenAIP',
+    unlocks: 'VFR airspace zones on the globe',
+    getUrl: 'https://www.openaip.net',
+    envVars: Object.freeze(['OPENAIP_API_KEY']),
+    tier: 'free',
+  }),
+  Object.freeze({
     id: 'tomtom',
     title: 'TOMTOM',
     unlocks: 'Real live traffic (keyless runs a simulation)',

@@ -1,5 +1,6 @@
 import { createLocalGeoJsonLayer } from './localGeojson.js';
 import { createFirmsHeatmapLayer } from './firmsHeatmap.js';
+import { createOpenAirspacesLayer } from './openAirspaces.js';
 import submarineCablesLayer from './telegeographySubmarineCables.js';
 
 // Use Vite's ?url import to properly resolve these assets in dev and build
@@ -44,9 +45,13 @@ const fires = createFirmsHeatmapLayer({
   source: 'NASA FIRMS · LIVE',
 });
 
+// OpenAIP VFR airspaces (via the /api/openaip proxy — key stays server-side).
+const openAirspaces = createOpenAirspacesLayer();
+
 export default [
   datacenters,
   dams,
   submarineCablesLayer,
   fires,
+  openAirspaces,
 ];

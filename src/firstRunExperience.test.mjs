@@ -660,10 +660,14 @@ test('the voice TOOL SCHEMA is byte-identical to main — the mission mapping is
   // exactly the kind of schema change this pin exists to make loud). The
   // guarded claim is unchanged: first-run missions ride existing tools, and
   // any NEW drift from this recorded schema still fails here.
-  assert.equal(block.length, 31189, 'tool schema byte length drifted from the pinned release schema');
+  //
+  // Re-pinned 2026-09-09: set_layer_visibility extends its enum with
+  // 'open-airspaces' (a real new layer — the same deliberate schema change
+  // this pin exists to make loud).
+  assert.equal(block.length, 31352, 'tool schema byte length drifted from the pinned release schema');
   assert.equal(
     crypto.createHash('sha256').update(block).digest('hex'),
-    '73aaabdb169a5478893d28688f327a21edd32ed3ec16fc6287bd944ed77beecf',
+    '7eb1d10b15d4096a7465c98aa0cb76c2797c9d1f98d49324b1959d10f8ae7341',
     'the first-run missions must ride EXISTING tools: no schema edit, no cache bust',
   );
 

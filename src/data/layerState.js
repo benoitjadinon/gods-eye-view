@@ -241,6 +241,28 @@ const OPTION_GROUPS = Object.freeze({
       decode: (value) => (/^\d{1,3}$/.test(value) ? normalizeVolume(Number(value) / 100) : null),
     }),
   ]),
+  // OpenAIP VFR airspaces: one chip per airspace type (defaults: the 7
+  // VFR-friendly classes ON, safety/other classes OFF) plus a 3D-volumes
+  // toggle. Option tokens are scoped to this owner group, so 'v' (volumes)
+  // and the a..p type letters never collide with sibling owners.
+  'open-airspaces': Object.freeze([
+    booleanOption('gliding', 'a', true),
+    booleanOption('aerialSport', 'b', true),
+    booleanOption('vfrSector', 'c', true),
+    booleanOption('rmz', 'd', true),
+    booleanOption('tmz', 'e', true),
+    booleanOption('tiz', 'f', true),
+    booleanOption('tia', 'g', true),
+    booleanOption('danger', 'h', false),
+    booleanOption('restricted', 'i', false),
+    booleanOption('prohibited', 'j', false),
+    booleanOption('ctr', 'k', false),
+    booleanOption('atz', 'l', false),
+    booleanOption('matz', 'm', false),
+    booleanOption('htz', 'n', false),
+    booleanOption('other', 'p', false),
+    booleanOption('volumes', 'v', true),
+  ]),
 });
 
 const TRACKING_OPTION_KEY_BY_LAYER = Object.freeze({
@@ -286,6 +308,7 @@ export const LAYER_STATE_REGISTRY = Object.freeze([
   Object.freeze({ id: 'military', token: 'm', disposition: 'enabled+mirrored-options', optionOwner: 'flights' }),
   Object.freeze({ id: 'military-awareness', token: 'g', disposition: 'enabled-only' }),
   Object.freeze({ id: 'military-installations', token: 'i', disposition: 'enabled-only' }),
+  Object.freeze({ id: 'open-airspaces', token: 'o', disposition: 'enabled+options', optionOwner: 'open-airspaces' }),
   Object.freeze({ id: 'radio', token: 'r', disposition: 'enabled+options', optionOwner: 'radio' }),
   Object.freeze({ id: 'rocket-launches', token: 'x', disposition: 'enabled-only' }),
   Object.freeze({ id: 'satellites', token: 's', disposition: 'enabled+options', optionOwner: 'satellites' }),

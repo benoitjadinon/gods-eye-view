@@ -179,6 +179,7 @@ const CREDIT_EXPECTATIONS = {
   'telegeography-submarine-cables': /TeleGeography/i,
   'local-neighborhoods': /DataSF|San Francisco/i,
   'weather-effects': /Open-Meteo/i,
+  'open-airspaces': /openAIP/i,
 };
 
 /**
@@ -1397,7 +1398,7 @@ async function runBrowserGroup(record) {
     await evalBounded(async () => {
       const dm = window.__godsEyeView.dataManager;
       const heavy = ['cctv', 'traffic', 'flights', 'satellites', 'telegeography-submarine-cables',
-        'local-datacenters', 'local-dams', 'military-installations', 'earthquakes'];
+        'local-datacenters', 'local-dams', 'military-installations', 'earthquakes', 'open-airspaces'];
       for (const id of heavy) {
         if (!dm.layers.has(id)) continue;
         try {

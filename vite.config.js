@@ -2230,6 +2230,243 @@ function firmsProxy() {
 }
 
 /**
+ * openAIP airspace proxy: airspace polygons near a point, keyless-degradable.
+ * Upstream: GET https://api.core.openaip.net/api/airspaces with header
+ * 'x-openaip-api-key: <key>'. The key comes from OPENAIP_API_KEY server-side
+ * only — the browser fetches same-origin `/api/openaip/airspaces`.
+ *
+ * Pass-through query params: pos=<lat>,<lon>; dist=<meters>; type=<csv of
+ * type ids>; page; limit (capped at 1000).
+ *
+ * Cache: memory + disk (.gev-cache/openaip/), TTL 24 h, single-flight per
+ * query, serve-stale-on-failure — the firmsProxy pattern, but keyed per
+ * query-param hash so distinct queries never share a cache line. Responses
+ * are WHITELISTED to the documented item fields before serving.
+ *
+ * Routes:
+ *   GET /api/openaip/airspaces  -> {fetchedAt, stale, ttlMs, count, items}
+ *   GET /api/openaip/status     -> {hasKey, lastFetch, count, stale}
+ *
+ * Keyless (no OPENAIP_API_KEY): /api/openaip/airspaces → 503 {error:'no_key'};
+ * status → {hasKey:false}. Upstream is never touched without a key.
+ *
+ * @returns {import('vite').Plugin}
+ */
+function openAipProxy() {
+  const TTL_MS = 86_400_000;
+  const CACHE_DIR = path.join(process.cwd(), '.gev-cache', 'openaip');
+  const MEM_MAX_ENTRIES = 256;
+  const UPSTREAM_TIMEOUT_MS = 15000;
+  const MAX_LIMIT = 1000;
+
+  /** Item fields we pass through — everything else is stripped before serving. */
+  const ITEM_FIELDS = [
+    '_id', 'name', 'type', 'icaoClass', 'geometry', 'country', 'upperLimit',
+    'lowerLimit', 'frequencies', 'hoursOfOperation', 'activity', 'remarks',
+  ];
+
+  /** @type {Map<string, {at:number, items:Array<object>}>} keyed by query-param hash. */
+  const mem = new Map();
+  /** @type {Map<string, Promise<?{at:number, items:Array<object>}>>} single-flight per key. */
+  const inflight = new Map();
+  /** @type {Map<string, boolean>} disk cache keys already probed. */
+  const diskChecked = new Map();
+
+  const apiKey = () => String(process.env.OPENAIP_API_KEY || '').trim();
+
+  const cachePath = (hash) => path.join(CACHE_DIR, `${hash}.json`);
+
+  /** Canonical query-key: sorted `name=value` pairs hashed, so param order never forks the cache. */
+  function hashParams(params) {
+    const canonical = [...params.entries()]
+      .sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0))
+      .map(([name, value]) => `${name}=${value}`)
+      .join('&');
+    return createHash('sha256').update(canonical).digest('hex').slice(0, 16);
+  }
+
+  /** Copy only the whitelisted fields off one upstream item. */
+  function sanitizeItem(raw) {
+    if (!raw || typeof raw !== 'object') return null;
+    const item = {};
+    for (const field of ITEM_FIELDS) {
+      if (raw[field] !== undefined) item[field] = raw[field];
+    }
+    return item;
+  }
+
+  function sanitizeItems(rawItems) {
+    const items = [];
+    for (const raw of rawItems) {
+      const item = sanitizeItem(raw);
+      if (item) items.push(item);
+    }
+    return items;
+  }
+
+  async function readDiskOnce(hash) {
+    if (diskChecked.get(hash)) return;
+    diskChecked.set(hash, true);
+    try {
+      const parsed = JSON.parse(await fsp.readFile(cachePath(hash), 'utf8'));
+      if (parsed && Number.isFinite(parsed?.at) && Array.isArray(parsed?.items)) {
+        memSet(hash, { at: parsed.at, items: parsed.items });
+      }
+    } catch { /* no disk cache yet */ }
+  }
+
+  async function writeDisk(hash, entry) {
+    try {
+      await fsp.mkdir(CACHE_DIR, { recursive: true });
+      await fsp.writeFile(cachePath(hash), JSON.stringify(entry), 'utf8');
+    } catch (err) {
+      console.warn('[openaip-proxy] cache write failed:', err?.message || err);
+    }
+  }
+
+  /** LRU-ish memory insert (Map preserves insertion order; evict the oldest). */
+  function memSet(hash, entry) {
+    if (!mem.has(hash) && mem.size >= MEM_MAX_ENTRIES) {
+      const oldest = mem.keys().next().value;
+      mem.delete(oldest);
+    }
+    mem.set(hash, entry);
+  }
+
+  /** Build the upstream URL from the pass-through query params. */
+  function upstreamUrl(params) {
+    const url = new URL('https://api.core.openaip.net/api/airspaces');
+    for (const [name, value] of params.entries()) url.searchParams.set(name, value);
+    return url;
+  }
+
+  async function fetchUpstream(params) {
+    const res = await fetch(upstreamUrl(params), {
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
+      headers: { 'x-openaip-api-key': apiKey() },
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const body = await res.json();
+    if (!Array.isArray(body?.items)) throw new Error('malformed upstream response');
+    return body;
+  }
+
+  function buildPayload(entry, stale) {
+    return {
+      fetchedAt: entry.at,
+      stale,
+      ttlMs: TTL_MS,
+      count: entry.items.length,
+      items: entry.items,
+    };
+  }
+
+  return {
+    name: 'openaip-proxy',
+    configureServer(server) {
+      server.middlewares.use('/api/openaip', async (req, res) => {
+        // Sanitized responses only (proxy/security baseline): no upstream
+        // error details, and never echo the key or the upstream URL.
+        const sendJson = (status, obj) => {
+          if (res.headersSent) return;
+          res.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+          res.end(JSON.stringify(obj));
+        };
+        try {
+          const urlPath = String(req.url || '').split('?')[0];
+          const parsedUrl = new URL(req.url || '', 'http://internal');
+          const key = apiKey();
+
+          if (urlPath === '/status') {
+            if (!key) {
+              sendJson(200, { hasKey: false, lastFetch: null, count: null, stale: false });
+              return;
+            }
+            let lastFetch = null;
+            let count = null;
+            for (const entry of mem.values()) {
+              if (lastFetch === null || entry.at > lastFetch) lastFetch = entry.at;
+              count = (count ?? 0) + entry.items.length;
+            }
+            sendJson(200, {
+              hasKey: true,
+              lastFetch,
+              count,
+              stale: lastFetch === null ? false : Date.now() - lastFetch >= TTL_MS,
+            });
+            return;
+          }
+
+          if (urlPath !== '/airspaces') {
+            sendJson(404, { error: 'not_found' });
+            return;
+          }
+
+          if (!key) {
+            sendJson(503, { error: 'no_key' });
+            return;
+          }
+
+          // Pass-through query params, with the limit capped.
+          const params = new URLSearchParams();
+          for (const name of ['pos', 'dist', 'type', 'page']) {
+            const value = parsedUrl.searchParams.get(name);
+            if (value) params.set(name, value);
+          }
+          const rawLimit = parsedUrl.searchParams.get('limit');
+          if (rawLimit) {
+            const limit = Math.min(parseInt(rawLimit, 10), MAX_LIMIT);
+            if (Number.isFinite(limit) && limit > 0) params.set('limit', String(limit));
+          }
+
+          const hash = hashParams(params);
+          await readDiskOnce(hash);
+          const entry = mem.get(hash);
+
+          if (entry && Date.now() - entry.at < TTL_MS) {
+            sendJson(200, buildPayload(entry, false));
+            return;
+          }
+          // Stale or missing → refresh, single-flight per key (concurrent
+          // requests for the same query share one upstream pass). Capture the
+          // promise locally BEFORE awaiting: the .finally() deletes `inflight`
+          // the moment it settles.
+          if (!inflight.has(hash)) {
+            const request = fetchUpstream(params)
+              .then(async (body) => {
+                const fresh = { at: Date.now(), items: sanitizeItems(body.items) };
+                memSet(hash, fresh);
+                await writeDisk(hash, fresh);
+                return fresh;
+              })
+              .catch((err) => {
+                console.warn(`[openaip-proxy] refresh failed (${err?.message || err}) — serving cache if any`);
+                return null;
+              })
+              .finally(() => {
+                if (inflight.get(hash) === request) inflight.delete(hash);
+              });
+            inflight.set(hash, request);
+          }
+          const pending = inflight.get(hash);
+          const fresh = await pending;
+          if (fresh) {
+            sendJson(200, buildPayload(fresh, false));
+          } else if (entry) {
+            sendJson(200, buildPayload(entry, true)); // upstream down — stale beats empty
+          } else {
+            sendJson(502, { error: 'openaip fetch failed and no cache available' });
+          }
+        } catch (err) {
+          console.warn('[openaip-proxy] error:', err?.message || err);
+          sendJson(500, { error: 'openaip proxy error' });
+        }
+      });
+    },
+  };
+}
+
+/**
  * Re:Earth terrain point-height proxy: batched lon/lat → ellipsoidal height
  * lookups, keyless. Upstream: https://terrain.reearth.land/heights.json
  * (≤256 points per call). Terrain doesn't move, so results are cached to
@@ -5770,7 +6007,7 @@ const GEV_REALTIME_TOOLS = [
         layerId: {
           type: 'string',
           description:
-            'Common-name mapping for the non-obvious ids: space mission(s) → rocket-launches; fires/wildfires/active fires → local-firms (NASA FIRMS); ships/vessels/boats → ais-live-vessels; undersea/submarine cables → telegeography-submarine-cables; datacenters → local-datacenters; dams → local-dams; bikes/bike share → bikeshare; street traffic/congestion → traffic; traffic cameras → cctv; internet radio/stations → radio.',
+            'Common-name mapping for the non-obvious ids: space mission(s) → rocket-launches; fires/wildfires/active fires → local-firms (NASA FIRMS); ships/vessels/boats → ais-live-vessels; undersea/submarine cables → telegeography-submarine-cables; datacenters → local-datacenters; dams → local-dams; bikes/bike share → bikeshare; street traffic/congestion → traffic; traffic cameras → cctv; internet radio/stations → radio; VFR zones/airspace/airspaces/openaip → open-airspaces.',
           enum: [
             'flights',
             'military',
@@ -5786,6 +6023,7 @@ const GEV_REALTIME_TOOLS = [
             'local-dams',
             'telegeography-submarine-cables',
             'local-firms',
+            'open-airspaces',
           ],
         },
         enabled: { type: 'boolean' },
@@ -5817,6 +6055,7 @@ const GEV_REALTIME_TOOLS = [
             'local-dams',
             'telegeography-submarine-cables',
             'local-firms',
+            'open-airspaces',
           ],
           description: 'Optional layer row to scroll into view and highlight.',
         },
@@ -5919,6 +6158,7 @@ const GEV_REALTIME_TOOLS = [
             'local-dams',
             'telegeography-submarine-cables',
             'local-firms',
+            'open-airspaces',
           ],
           description: 'Optional layer filter for visible entity context.',
         },
@@ -6234,7 +6474,7 @@ const GEV_REALTIME_TOOLS = [
       properties: {
         layers: {
           type: 'array',
-          items: { type: 'string', enum: ['flights', 'military', 'ais-live-vessels', 'local-firms', 'earthquakes'] },
+          items: { type: 'string', enum: ['flights', 'military', 'ais-live-vessels', 'local-firms', 'earthquakes', 'open-airspaces'] },
           description: 'Layers to query. fires/wildfires → local-firms; ships/vessels → ais-live-vessels.',
         },
         scope: {
@@ -7744,6 +7984,7 @@ export default defineConfig(({ mode }) => {
       celestrakProxy(),
       tomtomProxy(),
       firmsProxy(),
+      openAipProxy(),
       rocketLaunchesProxy(),
       terrainHeightsProxy(),
       adsbdbProxy(),

@@ -176,6 +176,11 @@ const LAYER_ALIASES = new Map([
   ['firms', 'local-firms'],
   ['fires', 'local-firms'],
   ['active fires', 'local-firms'],
+  ['airspace', 'open-airspaces'],
+  ['airspaces', 'open-airspaces'],
+  ['vfr zones', 'open-airspaces'],
+  ['vfr airspace', 'open-airspaces'],
+  ['openaip', 'open-airspaces'],
 ]);
 
 const CITY_ALIASES = new Map([
@@ -3273,6 +3278,7 @@ function layerTitle(layerId) {
   if (layerId === 'local-dams') return 'Dam';
   if (layerId === 'telegeography-submarine-cables') return 'Submarine Cable';
   if (layerId === 'local-firms') return 'Active Fire';
+  if (layerId === 'open-airspaces') return 'VFR Airspaces';
   return layerId || 'Entity';
 }
 
